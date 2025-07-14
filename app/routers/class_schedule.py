@@ -1,12 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
 from app import models, schemas
 from app.database import get_db
 from app.auth2 import get_current_user
-from typing import List
+from typing import List, Optional
 from datetime import datetime, date
-from pydantic import ValidationError
 
 router = APIRouter()
 
@@ -333,3 +331,212 @@ def get_student_class_schedule(
             "teacher_name": teacher_name
         })
     return result
+
+@router.get("/api/current_student_class")
+async def get_current_student_class(
+    date_str: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    student = db.query(models.Student).filter(models.Student.user_id == current_user.id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student profile not found")
+
+    student_division = db.query(models.StudentDivision).filter(
+        models.StudentDivision.student_id == student.id,
+        models.StudentDivision.is_current == True
+    ).first()
+    if not student_division:
+        raise HTTPException(status_code=404, detail="Current division for student not found")
+
+    try:
+        if date_str:
+            query_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        else:
+            query_date = date.today()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    current_time = datetime.now().time()
+
+    class_details = db.query(
+        models.ClassSchedule,
+        models.School.name.label('school_name'),
+        models.School.id.label('school_id'),
+        models.Division.id.label('division_id'),
+        models.Division.grade_id.label('grade_id'),
+        models.Division.section_id.label('section_id'),
+        models.Grade.name.label('grade_name'),
+        models.Section.name.label('section_name'),
+        models.Subject.name.label('subject_name'),
+        models.Subject.id.label('subject_id'),
+        models.Teacher.id.label('teacher_id'),
+        (models.Teacher.first_name + ' ' + models.Teacher.last_name).label('teacher_name')
+    ).join(
+        models.Division, models.ClassSchedule.division_id == models.Division.id
+    ).join(
+        models.School, models.Division.school_id == models.School.id
+    ).join(
+        models.Grade, models.Division.grade_id == models.Grade.id
+    ).join(
+        models.Section, models.Division.section_id == models.Section.id
+    ).join(
+        models.Subject, models.ClassSchedule.subject_id == models.Subject.id
+    ).join(
+        models.Teacher, models.ClassSchedule.teacher_id == models.Teacher.id
+    ).filter(
+        models.ClassSchedule.division_id == student_division.division_id,
+        models.ClassSchedule.date == query_date,
+        models.ClassSchedule.start_time <= current_time,
+        models.ClassSchedule.end_time >= current_time
+    ).order_by(models.ClassSchedule.start_time).first()
+
+    if not class_details:
+        raise HTTPException(status_code=404, detail="No Current Class found")
+
+    class_schedule = class_details[0]
+
+    details = db.query(
+        models.ClassDetailsRel,
+        models.SubjectTopic.topic,
+        models.SubjectTopic.sub_topic
+    ).join(
+        models.SubjectTopic, models.SubjectTopic.id == models.ClassDetailsRel.subject_topic_id
+    ).filter(
+        models.ClassDetailsRel.class_schedule_id == class_schedule.id
+    ).all()
+
+    topics_dict = {}
+    for rel in details:
+        topic_name = rel.topic
+        subtopic_name = rel.sub_topic
+        if topic_name not in topics_dict:
+            topics_dict[topic_name] = []
+        if subtopic_name:
+            topics_dict[topic_name].append(subtopic_name)
+    detail_list = [
+        {"topic": topic, "sub_topic": subtopics}
+        for topic, subtopics in topics_dict.items()
+    ]
+
+    return {
+        "class_schedule_id": class_schedule.id,
+        "date": class_schedule.date,
+        "period": class_schedule.period,
+        "start_time": class_schedule.start_time,
+        "end_time": class_schedule.end_time,
+        "school_name": class_details.school_name,
+        "division_id": class_details.division_id,
+        "grade_id": class_details.grade_id,
+        "grade_name": class_details.grade_name,
+        "section_id": class_details.section_id,
+        "section_name": class_details.section_name,
+        "subject_name": class_details.subject_name,
+        "teacher_name": class_details.teacher_name,
+        "class_details": detail_list,
+        "school_id": class_details.school_id,
+        "subject_id": class_details.subject_id,
+        "teacher_id": class_details.teacher_id
+    }
+
+@router.get("/api/current_teacher_class")
+async def get_current_teacher_class(
+    date_str: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    teacher = db.query(models.Teacher).filter(models.Teacher.user_id == current_user.id).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+
+    try:
+        if date_str:
+            query_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        else:
+            query_date = date.today()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    
+    current_time = datetime.now().time()
+
+    class_details = db.query(
+        models.ClassSchedule,
+        models.School.name.label('school_name'),
+        models.School.id.label('school_id'),
+        models.Division.id.label('division_id'),
+        models.Division.grade_id.label('grade_id'),
+        models.Division.section_id.label('section_id'),
+        models.Grade.name.label('grade_name'),
+        models.Section.name.label('section_name'),
+        models.Subject.name.label('subject_name'),
+        models.Subject.id.label('subject_id'),
+        models.Teacher.id.label('teacher_id'),
+        (models.Teacher.first_name + ' ' + models.Teacher.last_name).label('teacher_name')
+    ).join(
+        models.Division, models.ClassSchedule.division_id == models.Division.id
+    ).join(
+        models.School, models.Division.school_id == models.School.id
+    ).join(
+        models.Grade, models.Division.grade_id == models.Grade.id
+    ).join(
+        models.Section, models.Division.section_id == models.Section.id
+    ).join(
+        models.Subject, models.ClassSchedule.subject_id == models.Subject.id
+    ).join(
+        models.Teacher, models.ClassSchedule.teacher_id == models.Teacher.id
+    ).filter(
+        models.ClassSchedule.teacher_id == teacher.id,
+        models.ClassSchedule.date == query_date,
+        models.ClassSchedule.start_time <= current_time,
+        models.ClassSchedule.end_time >= current_time
+    ).order_by(models.ClassSchedule.start_time).first()
+
+    if not class_details:
+        raise HTTPException(status_code=404, detail="No Current Class found")
+
+    class_schedule = class_details[0]
+
+    details = db.query(
+        models.ClassDetailsRel,
+        models.SubjectTopic.topic,
+        models.SubjectTopic.sub_topic
+    ).join(
+        models.SubjectTopic, models.SubjectTopic.id == models.ClassDetailsRel.subject_topic_id
+    ).filter(
+        models.ClassDetailsRel.class_schedule_id == class_schedule.id
+    ).all()
+
+    topics_dict = {}
+    for rel in details:
+        topic_name = rel.topic
+        subtopic_name = rel.sub_topic
+        if topic_name not in topics_dict:
+            topics_dict[topic_name] = []
+        if subtopic_name:
+            topics_dict[topic_name].append(subtopic_name)
+    detail_list = [
+        {"topic": topic, "sub_topic": subtopics}
+        for topic, subtopics in topics_dict.items()
+    ]
+
+    return {
+        "class_schedule_id": class_schedule.id,
+        "date": class_schedule.date,
+        "period": class_schedule.period,
+        "start_time": class_schedule.start_time,
+        "end_time": class_schedule.end_time,
+        "school_name": class_details.school_name,
+        "school_id": class_details.school_id,
+        "division_id": class_details.division_id,
+        "grade_id": class_details.grade_id,
+        "grade_name": class_details.grade_name,
+        "section_id": class_details.section_id,
+        "section_name": class_details.section_name,
+        "subject_name": class_details.subject_name,
+        "teacher_name": class_details.teacher_name,
+        "subject_id": class_details.subject_id,
+        "teacher_id": class_details.teacher_id,
+        "class_details": detail_list
+    }
