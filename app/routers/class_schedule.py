@@ -133,16 +133,23 @@ def get_class_schedules(
     role = db.query(models.UserRole).filter(models.UserRole.id == user_role_rel.role_id).first()
     if not role or role.name.lower() not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Only admin and teacher users can view class schedules")
-    
-    class_schedules = db.query(models.ClassSchedule).all()
+
+    # fetch all data
+    class_schedules = db.query(
+        models.ClassSchedule,
+        models.Subject,
+        models.Division,
+        models.Teacher
+    ).join(
+        models.Subject, models.ClassSchedule.subject_id == models.Subject.id
+    ).join(
+        models.Division, models.ClassSchedule.division_id == models.Division.id
+    ).join(
+        models.Teacher, models.ClassSchedule.teacher_id == models.Teacher.id
+    ).all()
+
     result = []
-    
-    for schedule in class_schedules:
-        # Get related names
-        subject = db.query(models.Subject).filter(models.Subject.id == schedule.subject_id).first()
-        teacher = db.query(models.Teacher).filter(models.Teacher.id == schedule.teacher_id).first()
-        division = db.query(models.Division).filter(models.Division.id == schedule.division_id).first()
-        
+    for schedule, subject, division, teacher in class_schedules:
         result.append({
             "id": schedule.id,
             "period": schedule.period,
@@ -152,9 +159,9 @@ def get_class_schedules(
             "teacher_id": schedule.teacher_id,
             "start_time": schedule.start_time.isoformat(),
             "end_time": schedule.end_time.isoformat(),
-            "subject_name": subject.name if subject else None,
-            "division_name": f"Grade {division.grade_id} Section {division.section_id}" if division else None,
-            "teacher_name": f"{teacher.first_name} {teacher.last_name}" if teacher else None,
+            "subject_name": subject.name,
+            "division_name": f"Grade {division.grade_id} Section {division.section_id}",
+            "teacher_name": f"{teacher.first_name} {teacher.last_name}",
             "created_at": schedule.created_at,
             "updated_at": schedule.updated_at
         })
@@ -171,13 +178,21 @@ def get_teacher_class_schedule(
     if not teacher:
         raise HTTPException(status_code=404, detail="Teacher profile not found")
 
-    # Get all class schedules for this teacher
-    class_schedules = db.query(models.ClassSchedule).filter(models.ClassSchedule.teacher_id == teacher.id).all()
+    # fetch all data
+    class_schedules = db.query(
+        models.ClassSchedule,
+        models.Subject,
+        models.Division
+    ).join(
+        models.Subject, models.ClassSchedule.subject_id == models.Subject.id
+    ).join(
+        models.Division, models.ClassSchedule.division_id == models.Division.id
+    ).filter(
+        models.ClassSchedule.teacher_id == teacher.id
+    ).all()
 
     result = []
-    for schedule in class_schedules:
-        subject = db.query(models.Subject).filter(models.Subject.id == schedule.subject_id).first()
-        division = db.query(models.Division).filter(models.Division.id == schedule.division_id).first()
+    for schedule, subject, division in class_schedules:
         teacher_name = f"{teacher.first_name} {teacher.last_name}"
         result.append({
             "id": schedule.id,
@@ -306,15 +321,25 @@ def get_student_class_schedule(
     if not student_division:
         raise HTTPException(status_code=404, detail="Current division for student not found")
 
-    # Get all class schedules for this division
-    class_schedules = db.query(models.ClassSchedule).filter(models.ClassSchedule.division_id == student_division.division_id).all()
+    # fetch all data
+    class_schedules = db.query(
+        models.ClassSchedule,
+        models.Subject,
+        models.Division,
+        models.Teacher
+    ).join(
+        models.Subject, models.ClassSchedule.subject_id == models.Subject.id
+    ).join(
+        models.Division, models.ClassSchedule.division_id == models.Division.id
+    ).join(
+        models.Teacher, models.ClassSchedule.teacher_id == models.Teacher.id
+    ).filter(
+        models.ClassSchedule.division_id == student_division.division_id
+    ).all()
 
     result = []
-    for schedule in class_schedules:
-        subject = db.query(models.Subject).filter(models.Subject.id == schedule.subject_id).first()
-        division = db.query(models.Division).filter(models.Division.id == schedule.division_id).first()
-        teacher = db.query(models.Teacher).filter(models.Teacher.id == schedule.teacher_id).first()
-        teacher_name = f"{teacher.first_name} {teacher.last_name}" if teacher else None
+    for schedule, subject, division, teacher in class_schedules:
+        teacher_name = f"{teacher.first_name} {teacher.last_name}" if teacher.first_name and teacher.last_name else None
         result.append({
             "id": schedule.id,
             "period": schedule.period,
@@ -361,17 +386,12 @@ async def get_current_student_class(
 
     class_details = db.query(
         models.ClassSchedule,
-        models.School.name.label('school_name'),
-        models.School.id.label('school_id'),
-        models.Division.id.label('division_id'),
-        models.Division.grade_id.label('grade_id'),
-        models.Division.section_id.label('section_id'),
-        models.Grade.name.label('grade_name'),
-        models.Section.name.label('section_name'),
-        models.Subject.name.label('subject_name'),
-        models.Subject.id.label('subject_id'),
-        models.Teacher.id.label('teacher_id'),
-        (models.Teacher.first_name + ' ' + models.Teacher.last_name).label('teacher_name')
+        models.School,
+        models.Division,
+        models.Grade,
+        models.Section,
+        models.Subject,
+        models.Teacher
     ).join(
         models.Division, models.ClassSchedule.division_id == models.Division.id
     ).join(
@@ -394,7 +414,7 @@ async def get_current_student_class(
     if not class_details:
         raise HTTPException(status_code=404, detail="No Current Class found")
 
-    class_schedule = class_details[0]
+    class_schedule, school, division, grade, section, subject, teacher = class_details
 
     details = db.query(
         models.ClassDetailsRel,
@@ -425,18 +445,18 @@ async def get_current_student_class(
         "period": class_schedule.period,
         "start_time": class_schedule.start_time,
         "end_time": class_schedule.end_time,
-        "school_name": class_details.school_name,
-        "division_id": class_details.division_id,
-        "grade_id": class_details.grade_id,
-        "grade_name": class_details.grade_name,
-        "section_id": class_details.section_id,
-        "section_name": class_details.section_name,
-        "subject_name": class_details.subject_name,
-        "teacher_name": class_details.teacher_name,
+        "school_name": school.name if school else None,
+        "school_id": school.id if school else None,
+        "division_id": division.id if division else None,
+        "grade_id": grade.id if grade else None,
+        "grade_name": grade.name if grade else None,
+        "section_id": section.id if section else None,
+        "section_name": section.name if section else None,
+        "subject_name": subject.name if subject else None,
+        "teacher_name": f"{teacher.first_name} {teacher.last_name}" if teacher else None,
         "class_details": detail_list,
-        "school_id": class_details.school_id,
-        "subject_id": class_details.subject_id,
-        "teacher_id": class_details.teacher_id
+        "subject_id": subject.id if subject else None,
+        "teacher_id": teacher.id if teacher else None
     }
 
 @router.get("/api/current_teacher_class")
@@ -449,7 +469,6 @@ async def get_current_teacher_class(
     if not teacher:
         raise HTTPException(status_code=404, detail="Teacher profile not found")
 
-
     try:
         if date_str:
             query_date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -458,22 +477,16 @@ async def get_current_teacher_class(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    
     current_time = datetime.now().time()
 
     class_details = db.query(
         models.ClassSchedule,
-        models.School.name.label('school_name'),
-        models.School.id.label('school_id'),
-        models.Division.id.label('division_id'),
-        models.Division.grade_id.label('grade_id'),
-        models.Division.section_id.label('section_id'),
-        models.Grade.name.label('grade_name'),
-        models.Section.name.label('section_name'),
-        models.Subject.name.label('subject_name'),
-        models.Subject.id.label('subject_id'),
-        models.Teacher.id.label('teacher_id'),
-        (models.Teacher.first_name + ' ' + models.Teacher.last_name).label('teacher_name')
+        models.School,
+        models.Division,
+        models.Grade,
+        models.Section,
+        models.Subject,
+        models.Teacher
     ).join(
         models.Division, models.ClassSchedule.division_id == models.Division.id
     ).join(
@@ -496,7 +509,7 @@ async def get_current_teacher_class(
     if not class_details:
         raise HTTPException(status_code=404, detail="No Current Class found")
 
-    class_schedule = class_details[0]
+    class_schedule, school, division, grade, section, subject, teacher_obj = class_details
 
     details = db.query(
         models.ClassDetailsRel,
@@ -527,16 +540,16 @@ async def get_current_teacher_class(
         "period": class_schedule.period,
         "start_time": class_schedule.start_time,
         "end_time": class_schedule.end_time,
-        "school_name": class_details.school_name,
-        "school_id": class_details.school_id,
-        "division_id": class_details.division_id,
-        "grade_id": class_details.grade_id,
-        "grade_name": class_details.grade_name,
-        "section_id": class_details.section_id,
-        "section_name": class_details.section_name,
-        "subject_name": class_details.subject_name,
-        "teacher_name": class_details.teacher_name,
-        "subject_id": class_details.subject_id,
-        "teacher_id": class_details.teacher_id,
+        "school_name": school.name if school else None,
+        "school_id": school.id if school else None,
+        "division_id": division.id if division else None,
+        "grade_id": grade.id if grade else None,
+        "grade_name": grade.name if grade else None,
+        "section_id": section.id if section else None,
+        "section_name": section.name if section else None,
+        "subject_name": subject.name if subject else None,
+        "teacher_name": f"{teacher_obj.first_name} {teacher_obj.last_name}" if teacher_obj else None,
+        "subject_id": subject.id if subject else None,
+        "teacher_id": teacher_obj.id if teacher_obj else None,
         "class_details": detail_list
     }

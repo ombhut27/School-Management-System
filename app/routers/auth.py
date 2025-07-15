@@ -27,17 +27,18 @@ def login(
     access_token = auth2.create_access_token(data={"id": user.id})
 
     # Fetch user role
-    user_role_rel = db.query(models.UserRoleRel).filter(models.UserRoleRel.user_id == user.id).first()
+    user_role = db.query(models.UserRole.name).join(
+        models.UserRoleRel, models.UserRole.id == models.UserRoleRel.role_id
+    ).filter(models.UserRoleRel.user_id == user.id).first()
     message = "login successful"
-    if user_role_rel:
-        role = db.query(models.UserRole).filter(models.UserRole.id == user_role_rel.role_id).first()
-        if role:
-            if role.name.lower() == "admin":
-                message = "admin login successful"
-            elif role.name.lower() == "teacher":
-                message = "teacher login successful"
-            elif role.name.lower() == "student":
-                message = "student login successful"
+    if user_role:
+        role_name = user_role.name.lower()
+        if role_name == "admin":
+            message = "admin login successful"
+        elif role_name == "teacher":
+            message = "teacher login successful"
+        elif role_name == "student":
+            message = "student login successful"
 
     return {
         "access_token": access_token,

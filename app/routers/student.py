@@ -20,7 +20,7 @@ def create_student(
         raise HTTPException(status_code=403, detail="User does not have a role assigned")
     role = db.query(models.UserRole).filter(models.UserRole.id == user_role_rel.role_id).first()
     if not role or role.name.lower() not in allowed_roles:
-        raise HTTPException(status_code=403, detail="Must be a student or Administrator")
+        raise HTTPException(status_code=403, detail="Must be a student")
 
     # School validation
     school = db.query(models.School).filter(models.School.id == student.school_id).first()
@@ -101,28 +101,27 @@ def get_students(
     if not role or role.name.lower() not in ["admin", "teacher"]:
         raise HTTPException(status_code=403, detail="Only admin and teacher users can view students")
 
-    students = db.query(models.Student).all()
+    students = db.query(
+        models.Student,
+        models.School,
+        models.StudentDivision,
+        models.Division,
+        models.Grade,
+        models.Section
+    ).join(
+        models.School, models.Student.school_id == models.School.id
+    ).outerjoin(
+        models.StudentDivision, (models.StudentDivision.student_id == models.Student.id) & (models.StudentDivision.is_current == True)
+    ).outerjoin(
+        models.Division, models.StudentDivision.division_id == models.Division.id
+    ).outerjoin(
+        models.Grade, models.Division.grade_id == models.Grade.id
+    ).outerjoin(
+        models.Section, models.Division.section_id == models.Section.id
+    ).all()
+
     result = []
-    for student in students:
-        school = db.query(models.School).filter(models.School.id == student.school_id).first()
-        # Find current division for the student
-        student_division = db.query(models.StudentDivision).filter(models.StudentDivision.student_id == student.id, models.StudentDivision.is_current == True).first()
-        # division = None
-        grade_id = None
-        section_id = None
-        grade_name = None
-        section_name = None
-        division_id = None
-        if student_division:
-            division_obj = db.query(models.Division).filter(models.Division.id == student_division.division_id).first()
-            if division_obj:
-                division_id = division_obj.id
-                grade_id = division_obj.grade_id
-                section_id = division_obj.section_id
-                grade = db.query(models.Grade).filter(models.Grade.id == division_obj.grade_id).first()
-                section = db.query(models.Section).filter(models.Section.id == division_obj.section_id).first()
-                grade_name = grade.name if grade else None
-                section_name = section.name if section else None
+    for student, school, division, grade, section in students:
         result.append({
             "id": student.id,
             "display_name": f"{student.first_name} {student.last_name}",
@@ -131,11 +130,11 @@ def get_students(
             "updated_at": student.updated_at,
             "school_id": student.school_id,
             "school_name": school.name if school else None,
-            "division_id": division_id,
-            "grade_id": grade_id,
-            "section_id": section_id,
-            "grade_name": grade_name,
-            "section_name": section_name
+            "division_id": division.id if division else None,
+            "grade_id": grade.id if grade else None,
+            "section_id": section.id if section else None,
+            "grade_name": grade.name if grade else None,
+            "section_name": section.name if section else None
         })
     return result
 

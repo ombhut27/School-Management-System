@@ -51,7 +51,7 @@ class Token(BaseModel):
 
 class TeacherOut(BaseModel):
     id: int
-    display_name: str
+    full_name: str
     email: str
     created_at: datetime
     updated_at: datetime

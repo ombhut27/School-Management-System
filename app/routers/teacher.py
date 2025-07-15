@@ -60,7 +60,7 @@ async def create_teacher(
     
     return {
         "id": new_teacher.id,
-        "display_name": f"{new_teacher.first_name} {new_teacher.last_name}",
+        "full_name": f"{new_teacher.first_name} {new_teacher.last_name}",
         "email": new_teacher.email,
         "created_at": new_teacher.created_at,
         "updated_at": new_teacher.updated_at,
@@ -70,13 +70,15 @@ async def create_teacher(
 
 @router.get("/api/get_teachers", response_model=list[schemas.TeacherOut])
 def get_teachers(db: Session = Depends(get_db)):
-    teachers = db.query(models.Teacher).all()
+    teachers = db.query(
+        models.Teacher,
+        models.School
+    ).join(models.School, models.Teacher.school_id == models.School.id).all()
     result = []
-    for teacher in teachers:
-        school = db.query(models.School).filter(models.School.id == teacher.school_id).first()
+    for teacher, school in teachers:
         result.append({
             "id": teacher.id,
-            "display_name": f"{teacher.first_name} {teacher.last_name}",
+            "full_name": f"{teacher.first_name} {teacher.last_name}",
             "email": teacher.email,
             "created_at": teacher.created_at,
             "updated_at": teacher.updated_at,
@@ -209,12 +211,24 @@ async def add_teacher_division(
             detail=f"An error occurred while saving the teacher division: {str(e)}"
         )
     
-    # Get grade and section names
-    grade = db.query(models.Grade).filter(models.Grade.id == division.grade_id).first()
-    section = db.query(models.Section).filter(models.Section.id == division.section_id).first()
-    
+    # grade and section names 
+    division_info = db.query(
+        models.Division,
+        models.Grade,
+        models.Section
+    ).join(
+        models.Grade, models.Division.grade_id == models.Grade.id
+    ).join(
+        models.Section, models.Division.section_id == models.Section.id
+    ).filter(
+        models.Division.id == division.id
+    ).first()
+    division_name = ""
+    if division_info:
+        _, grade, section = division_info
+        division_name = f"{grade.name or ''} {section.name or ''}"
     return {
-        "division_name": f"{grade.name if grade else ''} {section.name if section else ''}",
+        "division_name": division_name,
         "subject_name": subject.name,
         "teacher_name": teacher.first_name + " " + teacher.last_name
     }
@@ -227,10 +241,7 @@ def get_my_subjects(
     teacher = db.query(models.Teacher).filter(models.Teacher.user_id == current_user.id).first()
     if not teacher:
         raise HTTPException(status_code=404, detail="Teacher profile not found")
-    subject_ids = db.query(TeacherDivision.subject_id).filter(TeacherDivision.teacher_id == teacher.id).distinct().all()
-    subject_ids = [sid[0] for sid in subject_ids]
-    if not subject_ids:
-        return []
-    subjects = db.query(Subject).filter(Subject.id.in_(subject_ids)).all()
+    subjects = db.query(Subject).join(TeacherDivision, Subject.id == TeacherDivision.subject_id)\
+        .filter(TeacherDivision.teacher_id == teacher.id).distinct().all()
     return subjects
 

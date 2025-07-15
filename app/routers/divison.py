@@ -41,14 +41,20 @@ def create_division(
 
 @router.get("/api/get_divisions", response_model=List[schemas.DivisionOutWithNames])
 def get_divisions(db: Session = Depends(get_db)):
-    divisions = db.query(models.Division).all()
+    divisions = db.query(
+        models.Division,
+        models.Grade,
+        models.Section,
+        models.School
+    ).join(
+        models.Grade, models.Division.grade_id == models.Grade.id
+    ).join(
+        models.Section, models.Division.section_id == models.Section.id
+    ).join(
+        models.School, models.Division.school_id == models.School.id
+    ).all()
     result = []
-    for division in divisions:
-        # Get grade, section, and school names
-        grade = db.query(models.Grade).filter(models.Grade.id == division.grade_id).first()
-        section = db.query(models.Section).filter(models.Section.id == division.section_id).first()
-        school = db.query(models.School).filter(models.School.id == division.school_id).first()
-        
+    for division, grade, section, school in divisions:
         result.append({
             "id": division.id,
             "grade_id": division.grade_id,

@@ -91,15 +91,20 @@ def get_subject_topics(
     if not role or role.name.lower() not in ["admin" , "teacher"]:
         raise HTTPException(status_code=403, detail="Only admin users can view subject topics")
     
-    subject_topics = db.query(models.SubjectTopic).all()
+    subject_topics = db.query(
+        models.SubjectTopic,
+        models.Subject,
+        models.Board,
+        models.Grade
+    ).join(
+        models.Subject, models.SubjectTopic.subject_id == models.Subject.id
+    ).join(
+        models.Board, models.SubjectTopic.board_id == models.Board.id
+    ).join(
+        models.Grade, models.SubjectTopic.grade_id == models.Grade.id
+    ).all()
     result = []
-    
-    for topic in subject_topics:
-        # Get related names
-        subject = db.query(models.Subject).filter(models.Subject.id == topic.subject_id).first()
-        board = db.query(models.Board).filter(models.Board.id == topic.board_id).first()
-        grade = db.query(models.Grade).filter(models.Grade.id == topic.grade_id).first()
-        
+    for topic, subject, board, grade in subject_topics:
         result.append({
             "id": topic.id,
             "topic": topic.topic,
