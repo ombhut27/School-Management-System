@@ -5,7 +5,9 @@ from fastapi import Depends, HTTPException, status
 from app.auth2 import get_current_user
 from sqlalchemy.orm import Session
 from app.models import TeacherDivision, Subject
-from sqlalchemy import select
+from .. import schemas 
+from app.schemas import QuizDetails, QuizGenerationStatus
+from app.schemas import TeacherTaskWithQuizOut
 
 router = APIRouter()
 
@@ -245,3 +247,98 @@ def get_my_subjects(
         .filter(TeacherDivision.teacher_id == teacher.id).distinct().all()
     return subjects
 
+@router.post("/api/create_teacher_tasks", 
+             status_code=status.HTTP_201_CREATED, 
+             response_model=TeacherTaskWithQuizOut)
+async def create_teacher_tasks(
+    create_task: schemas.CreateTeacherTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Check if user is a teacher
+    user_role_rel = db.query(models.UserRoleRel).filter(models.UserRoleRel.user_id == current_user.id).first()
+    if not user_role_rel:
+        raise HTTPException(status_code=403, detail="User does not have a role assigned")
+    role = db.query(models.UserRole).filter(models.UserRole.id == user_role_rel.role_id).first()
+    if not role or role.name.lower() != "teacher":
+        raise HTTPException(status_code=403, detail="Must be a teacher")
+    
+    # Create teacher task
+    new_teacher_task = models.TeacherTasks(
+        title=create_task.title,
+        task_type=str(create_task.task_type.value),
+        start_date=create_task.start_date,
+        end_date=create_task.end_date,
+        instructions=create_task.instructions,
+        subject_id=create_task.subject_id,
+        teacher_id=create_task.teacher_id,
+        division_id=create_task.division_id,
+        class_schedule_id=create_task.class_schedule_id,
+    )
+    
+    db.add(new_teacher_task)
+    db.commit()
+    db.refresh(new_teacher_task)
+    
+    # Base response structure
+    response_data = {
+        "task_id": new_teacher_task.id,
+        "title": new_teacher_task.title,
+        "task_type": new_teacher_task.task_type,
+        "start_date": new_teacher_task.start_date,
+        "end_date": new_teacher_task.end_date,
+        "class_schedule_id": new_teacher_task.class_schedule_id,
+        "quiz_id": None,
+        "quiz_details": None,
+        "generation_status": None,
+    }
+    
+    # Handle quiz creation for quiz-related tasks
+    quiz_task_types = ["Quiz", "Assignment", "SlipTest"]
+    if create_task.task_type.value in quiz_task_types and create_task.quiz:
+        
+        # Extract total marks from instructions if available
+        total_marks = None
+        if isinstance(create_task.quiz.instructions, dict):
+            total_marks = create_task.quiz.instructions.get("total_marks")
+        
+        # Create quiz
+        quiz_data = create_task.quiz.model_dump()
+        new_quiz = models.Quiz(user_id=current_user.id, **quiz_data)
+        
+        if total_marks is not None:
+            new_quiz.total_marks = total_marks
+        
+        db.add(new_quiz)
+        db.flush()  
+        db.refresh(new_quiz)
+        # Link quiz to teacher task
+        new_teacher_task.quiz_id = new_quiz.id
+        db.commit()
+
+        # Update response with quiz information
+        response_data.update({
+            "quiz_id": new_quiz.id,
+            "quiz_details": QuizDetails(
+                quiz_id=new_quiz.id,  # type: ignore
+                title=new_quiz.title,  # type: ignore
+                start_date=new_quiz.start_date,  # type: ignore
+                duration=new_quiz.duration,  # type: ignore
+                topic=new_quiz.topic,  # type: ignore
+                sub_topic=new_quiz.sub_topic,  # type: ignore
+                quiz_type=new_quiz.quiz_type,  # type: ignore
+                instructions=new_quiz.instructions,  # type: ignore
+                total_marks=total_marks,  # type: ignore
+                is_public=new_quiz.is_public,  # type: ignore
+                user_id=new_quiz.user_id  # type: ignore
+            ),
+            "generation_status": QuizGenerationStatus(
+                status="manual",
+                progress=100,
+                message="Quiz created successfully. Add questions manually.",
+                total_questions=0,
+                questions_generated=0
+            )
+        })
+    
+    return response_data

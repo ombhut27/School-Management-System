@@ -224,7 +224,7 @@ async def set_class_topic(
     
     role = db.query(models.UserRole).filter(models.UserRole.id == user_role_rel.role_id).first()
     
-    # Allow access if the user is Teacher, Administrator, or ssai
+    # Allow access if the user is Teacher, Administrator
     allowed_roles = ["teacher"]
     if not role or role.name not in allowed_roles:
         raise HTTPException(

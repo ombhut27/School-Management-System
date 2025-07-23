@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, text,Text,Date,Boolean,UniqueConstraint,Time
+from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, text,Text,Date,Boolean,UniqueConstraint,Time,DateTime,JSON,Computed,Enum as SQLEnum
 from .database import Base
+import enum
 
 class User(Base):
     __tablename__ = 'users'
@@ -210,3 +211,147 @@ class ClassDetailsRel(Base):
       __table_args__ = (
           UniqueConstraint('class_schedule_id', 'subject_topic_id', name='uq_schedule_topic'),
       )
+
+
+# Quiz 
+
+class QuestionState(str, enum.Enum):
+    active = "active"
+    draft = "draft"
+    edited = "edited"
+
+class Quiz(Base):
+    __tablename__='quiz'
+
+    id = Column(Integer, primary_key=True, index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    start_date = Column(DateTime, nullable=False)
+    duration = Column(Integer, nullable=False)  # Duration stored in minutes
+    due_date = Column(DateTime, Computed("start_date + interval '1 minute' * duration"), nullable=False)
+    topic = Column(String(50), nullable=False)
+    sub_topic = Column(String(50), nullable=False)
+    quiz_type = Column(String(50), nullable=False, default='Assignment')
+    is_public = Column(Boolean, server_default=text('true'))
+    instructions = Column(JSON, nullable=True)
+    total_marks = Column(Integer, nullable=True)
+
+    subject_id = Column(Integer, ForeignKey('subjects.id', ondelete="CASCADE"), nullable=False)
+    division_id = Column(Integer, ForeignKey('divisions.id', ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    school_id = Column(Integer, ForeignKey('schools.id', ondelete="CASCADE"), nullable=False)
+
+
+class Question(Base):
+    __tablename__='questions'
+
+    id = Column(Integer, primary_key=True, index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(JSON)
+    is_objective = Column(Boolean, nullable=False, server_default=text('true'))
+    answer = Column(JSON)
+    choice_body = Column(JSON)
+    topic = Column(String(50), nullable=False)
+    sub_topic = Column(String(50), nullable=False)
+    baseline_answer = Column(JSON)
+    is_public = Column(Boolean, server_default=text('true'))
+    state = Column(SQLEnum(QuestionState), default=QuestionState.active, nullable=True)
+
+    #Fkey
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    school_id = Column(Integer, ForeignKey('schools.id', ondelete='CASCADE'),nullable=False)
+    division_id = Column(Integer, ForeignKey('divisions.id', ondelete='CASCADE'),nullable=False)
+    subject_id = Column(Integer, ForeignKey('subjects.id', ondelete='CASCADE'),nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'title', 'subject_id', 'division_id', 'school_id', name='uq_question_user_title_context'),
+    )
+
+class QuizQuestion(Base):
+    __tablename__='quiz_question_rel'
+
+    id = Column(Integer, primary_key=True, index=True, nullable=False)
+    question_number = Column(Integer, nullable=False)
+
+    # Fkeys
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    question_id = Column(Integer, ForeignKey('questions.id', ondelete="CASCADE"), nullable=False)
+    quiz_id = Column(Integer, ForeignKey('quiz.id', ondelete="CASCADE"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('quiz_id', 'question_id', name='uq_quiz_question'),
+    )
+
+class PublishedQuiz(Base):
+    __tablename__ = 'published_quiz'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_detail = Column(JSON)
+    quiz_type = Column(String(20), nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    duration = Column(Integer, nullable=False)
+    end_time = Column(DateTime, Computed("start_time + interval '1 minute' * duration"), nullable=False)
+    quiz_id = Column(Integer, nullable=False) 
+    teacher_task_id = Column(Integer, nullable=True)
+    status = Column(String(20), nullable=False) 
+    
+    division_id = Column(Integer, ForeignKey('divisions.id', ondelete="CASCADE"), nullable=False)
+    school_id = Column(Integer, ForeignKey('schools.id', ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer,ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+
+    __table_args__ = (UniqueConstraint('quiz_id', 'division_id', 'school_id','quiz_type', name='uq_published_quiz_div_school'),)
+
+
+
+class StudentQuizResponseRel(Base):
+    __tablename__ = 'students_quiz_response_rel'
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_detail = Column(JSON) 
+    response = Column(JSON)
+    quiz_type = Column(String(20)) # for tasks
+    start_date = Column(DateTime) # for tasks
+    duration = Column(Integer) # for tasks
+    status = Column(String(20), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=text('now()'))
+    is_submitted = Column(Boolean, server_default=text('false'), nullable=False)
+    submitted_at = Column(TIMESTAMP(timezone=True))
+
+    
+    student_id = Column(Integer, ForeignKey('students.id', ondelete="CASCADE"), nullable=False)
+    quiz_rel_id = Column(Integer, ForeignKey('published_quiz.id'))
+
+
+# Teacher task
+
+class TaskTypeEnum(str, enum.Enum):
+    Classwork = "Classwork"
+    Homework = "Homework"
+    Quiz = "Quiz"
+    Assignment = "Assignment"
+    ReadingMaterial = "ReadingMaterial"
+    AICheck = "AICheck"
+    SlipTest = "SlipTest"
+
+class TeacherTasks(Base):
+    __tablename__ = 'teacher_tasks'
+
+    id = Column(Integer, primary_key=True, index=True, nullable=False)
+    title = Column(String(100),nullable=False)
+    task_type = Column(SQLEnum(TaskTypeEnum), nullable=False) 
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    instructions = Column(JSON)
+    status = Column(String, default="pending", nullable=True)
+
+    subject_id = Column(Integer, ForeignKey('subjects.id', ondelete="CASCADE"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey('teachers.id', ondelete="CASCADE"), nullable=False)
+    division_id = Column(Integer, ForeignKey('divisions.id', ondelete="CASCADE"), nullable=False)
+    class_schedule_id = Column(Integer, ForeignKey('class_schedules.id', ondelete="CASCADE"), nullable=True)
+    quiz_id = Column(Integer, ForeignKey('quiz.id', ondelete='SET NULL'), nullable=True)
+    published_quiz_id = Column(Integer, ForeignKey('published_quiz.id', ondelete='SET NULL'), nullable=True)
+    
+    __table_args__ = (UniqueConstraint('title','task_type','subject_id', 'teacher_id','division_id', 'class_schedule_id', name='uq_task_subject_teacher'),)
+
+
+    

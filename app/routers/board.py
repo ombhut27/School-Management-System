@@ -1,12 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db
 from sqlalchemy.exc import IntegrityError
 from app.auth2 import get_current_user
 from typing import List
-from sqlalchemy import select
 
 router = APIRouter()
 

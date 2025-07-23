@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.database import Base, engine
-from app.routers import users,auth,teacher,school,roles,student,divison,subjects,grade,section,board,subject_topic,class_schedule
+from app.routers import users,auth,teacher,school,roles,student,divison,subjects,grade,section,board,subject_topic,class_schedule,quiz
 
 # Create all tables with error handling
 try:
@@ -24,6 +24,7 @@ app.include_router(section.router)
 app.include_router(board.router)
 app.include_router(subject_topic.router)
 app.include_router(class_schedule.router)
+app.include_router(quiz.router)
 
 @app.get("/")
 def read_root():

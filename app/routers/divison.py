@@ -109,7 +109,7 @@ def assign_division_subject(
             division_id=payload.division_id,
             subject_id=sid
         )
-        for name, sid in payload.subjects.items()
+        for _, sid in payload.subjects.items()
         if sid not in existing_ids
     ]
 

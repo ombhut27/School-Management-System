@@ -5,7 +5,6 @@ from app.database import get_db
 from sqlalchemy.exc import IntegrityError
 from app.auth2 import get_current_user
 from typing import List
-from sqlalchemy import select
 
 router = APIRouter()
 
@@ -15,7 +14,9 @@ def add_section(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Only admin can add section (optional: add role check)
+    # Only admin can add section
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
     new_section = models.Section(**section.model_dump())
     try:
         db.add(new_section)

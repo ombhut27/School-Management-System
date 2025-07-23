@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr
-from datetime import datetime, time
-from typing import Optional
+from datetime import datetime, time, date
+from typing import Optional, Any, Dict, List
+import enum
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -387,4 +388,127 @@ class SetClassTopicOut(BaseModel):
     class Config:
         from_attributes = True
 
+class QuizTypeEnum(str, enum.Enum):
+    SlipTest = "SlipTest"
+    Assignment = "Assignment"
+    Quiz = "Quiz"
+    UnitTest = "UnitTest"
+    MidYearExam = "MidYearExam"
+    FinalExam = "FinalExam"
 
+class QuizCreate(BaseModel):
+    title: str
+    start_date: datetime
+    duration: int
+    topic: str
+    sub_topic: str
+    quiz_type: QuizTypeEnum
+    is_public: Optional[bool] = True
+    instructions: Optional[dict] = None
+    total_marks: Optional[int] = None
+    subject_id: int
+    division_id: int
+    school_id: int
+
+class QuestionCreate(BaseModel):
+    title: str
+    body: Any
+    is_objective: bool = True
+    answer: Dict[str, str]
+    choice_body: Dict[str, str]
+    topic: str
+    sub_topic: str
+    baseline_answer: Any
+    is_public: Optional[bool] = True
+    state: Optional[str] = "active"
+    school_id: int
+    division_id: int
+    subject_id: int
+
+class QuizQuestionAdd(BaseModel):
+    quiz_id: int
+    question_id: int
+    user_id: int
+
+class BulkQuizQuestionAdd(BaseModel):
+    question_ids: List[int]
+
+class BulkQuestionCreate(BaseModel):
+    questions: List[QuestionCreate]
+
+class QuizUpdate(BaseModel):
+    title: Optional[str] = None
+    start_date: Optional[datetime] = None
+    duration: Optional[int] = None
+    topic: Optional[str] = None
+    sub_topic: Optional[str] = None
+    quiz_type: Optional[QuizTypeEnum] = None
+    is_public: Optional[bool] = None
+    instructions: Optional[Any] = None
+    total_marks: Optional[int] = None
+    subject_id: Optional[int] = None
+    division_id: Optional[int] = None
+    school_id: Optional[int] = None
+
+class PublishQuiz(BaseModel):
+    quiz_id: int
+    quiz_type: str
+    division_id: int
+    start_time: datetime
+    duration: int
+
+class QuizDetails(BaseModel):
+    quiz_id: int
+    title: str
+    start_date: datetime
+    duration: int
+    topic: str
+    sub_topic: str
+    quiz_type: str
+    instructions: Optional[Any] = None
+    total_marks: Optional[int] = None
+    is_public: Optional[bool] = None
+    user_id: Optional[int] = None
+
+class QuizGenerationStatus(BaseModel):
+    status: str
+    progress: int
+    message: Optional[str] = None
+    total_questions: Optional[int] = None
+    questions_generated: Optional[int] = None
+
+class TaskTypeEnum(str, enum.Enum):
+
+    Classwork = "Classwork"
+    Homework = "Homework"
+    Quiz = "Quiz"
+    Assignment = "Assignment"
+    ReadingMaterial = "ReadingMaterial"
+    AICheck = "AICheck"
+    SlipTest = "SlipTest"
+
+
+class CreateTeacherTasks(BaseModel):
+    title: str
+    task_type: TaskTypeEnum
+    start_date: Optional[date]
+    end_date: Optional[date]
+    instructions: Optional[dict] = None
+    subject_id: int
+    teacher_id: int
+    division_id: int
+    class_schedule_id: int
+    quiz: Optional[QuizCreate] = None
+
+class TeacherTaskWithQuizOut(BaseModel):
+    # Task details
+    task_id: int
+    title: str
+    task_type: str
+    start_date: Optional[date]
+    end_date: Optional[date]
+    class_schedule_id: int
+
+    # Quiz details (if applicable)
+    quiz_id: Optional[int] = None
+    quiz_details: Optional[QuizDetails] = None
